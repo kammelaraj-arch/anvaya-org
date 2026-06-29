@@ -1,0 +1,14 @@
+{
+  "name": "anvaya-org",
+  "version": "1.0.0",
+  "private": true,
+  "description": "org.anvaya.one — the Organisation governance platform + dedapi provider. Independent of the family app (me.anvaya).",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

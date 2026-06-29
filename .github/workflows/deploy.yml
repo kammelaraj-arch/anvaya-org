@@ -1,0 +1,106 @@
+name: Provision & Deploy (org.anvaya.one)
+
+# Builds the org.anvaya.one apps (api + web) on the GitHub runner, ships the bundles to the server and
+# runs them with their own Postgres (Common + per-country cells) + containers + vhosts
+# (org.anvaya.one + dedapi.org.anvaya.one), add-only behind the shared nginx. GATED: manual dispatch.
+#
+# Required repo Secrets: DEPLOY_USER + (DEPLOY_SSH_KEY or DEPLOY_PASSWORD).
+# Optional: DEPLOY_HOST, CERTBOT_EMAIL, ORG_SESSION_SECRET, ORG_PG_PASSWORD.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you deploying org.anvaya.one?'
+        required: false
+        default: 'manual deploy'
+
+concurrency:
+  group: deploy-org-anvaya
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web (standalone) + api
+        run: |
+          NEXT_PUBLIC_ORG_API_URL="https://dedapi.org.anvaya.one" pnpm --filter=@anvaya-org/web build
+          pnpm --filter=@anvaya-org/api build
+
+      - name: Assemble deploy package
+        run: |
+          set -euo pipefail
+          rm -rf deploy-pkg && mkdir -p deploy-pkg/web
+          cp -r web/.next/standalone/. deploy-pkg/web/
+          mkdir -p deploy-pkg/web/web/.next
+          cp -r web/.next/static deploy-pkg/web/web/.next/static
+          [ -d web/public ] && cp -r web/public deploy-pkg/web/web/public || true
+          pnpm --filter=@anvaya-org/api deploy --prod deploy-pkg/api
+          test -f deploy-pkg/api/dist/main.js && echo "api bundle ok"
+          cp -r infra deploy-pkg/infra
+          tar -czf deploy-org-pkg.tgz -C deploy-pkg .
+          echo "package size: $(du -h deploy-org-pkg.tgz | cut -f1)"
+
+      - name: Copy package to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST || '192.248.147.205' }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          source: "deploy-org-pkg.tgz"
+          target: "/tmp"
+
+      - name: 1) Unpack on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST || '192.248.147.205' }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          script: |
+            set -euo pipefail
+            SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
+            rm -rf /tmp/deploy-org && mkdir -p /tmp/deploy-org
+            tar -xzf /tmp/deploy-org-pkg.tgz -C /tmp/deploy-org && rm -f /tmp/deploy-org-pkg.tgz
+            $SUDO rm -rf /var/www/anvaya-org /var/www/anvaya-org-api
+            $SUDO mv /tmp/deploy-org/web /var/www/anvaya-org
+            $SUDO mv /tmp/deploy-org/api /var/www/anvaya-org-api
+            $SUDO mkdir -p /var/www/anvaya-org-infra && $SUDO cp -r /tmp/deploy-org/infra /var/www/anvaya-org-infra/infra
+            $SUDO test -f /var/www/anvaya-org-api/dist/main.js && echo "api bundle present"
+            $SUDO test -f /var/www/anvaya-org/web/server.js && echo "web server present"
+
+      - name: 2) Deploy org.anvaya.one + dedapi (add-only) + TLS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST || '192.248.147.205' }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          command_timeout: "20m"
+          envs: CERTBOT_EMAIL,ORG_SESSION_SECRET,ORG_PG_PASSWORD
+          script: |
+            set -euo pipefail
+            SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
+            $SUDO env CERTBOT_EMAIL="${CERTBOT_EMAIL:-}" \
+              ORG_SESSION_SECRET="${ORG_SESSION_SECRET:-}" \
+              ORG_PG_PASSWORD="${ORG_PG_PASSWORD:-}" \
+              bash /var/www/anvaya-org-infra/infra/deploy-org.sh
+        env:
+          CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
+          ORG_SESSION_SECRET: ${{ secrets.ORG_SESSION_SECRET }}
+          ORG_PG_PASSWORD: ${{ secrets.ORG_PG_PASSWORD }}
