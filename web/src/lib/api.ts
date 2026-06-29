@@ -77,6 +77,15 @@ export const api = {
       call<{ key: DedapiKeyView; plaintext: string }>('/keys', { method: 'POST', body: JSON.stringify(b) }),
     revoke: (id: string) => call<{ ok: true }>(`/keys/${id}`, { method: 'DELETE' }),
   },
+  companies: {
+    status: () => call<{ configured: boolean }>('/companies/status'),
+    setKey: (key: string) => call<{ ok: true }>('/companies/key', { method: 'POST', body: JSON.stringify({ key }) }),
+    search: (q: string) => call<{ configured: boolean; items: CompanyHit[] }>(`/companies/search?q=${encodeURIComponent(q)}`),
+    get: (number: string) => call<{ configured: boolean; company: CompanyDetail | null }>(`/companies/company/${encodeURIComponent(number)}`),
+  },
 };
+
+export interface CompanyHit { number: string; name: string; status?: string; type?: string; address?: string }
+export interface CompanyDetail extends CompanyHit { incorporatedOn?: string; sicCodes?: string[] }
 
 export type { GuidanceItem };

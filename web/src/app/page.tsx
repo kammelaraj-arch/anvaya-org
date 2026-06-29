@@ -4,10 +4,10 @@
 // country-specific guidance catalogue + rules and issue dedapi keys to consuming platforms.
 
 import { useCallback, useEffect, useState } from 'react';
-import { api, apiEnabled, ApiError, type OrgUserView, type GuidanceRow, type RuleRow, type DedapiKeyView, type ComplianceRow, type GovMeta, type OrgRole } from '@/lib/api';
+import { api, apiEnabled, ApiError, type OrgUserView, type GuidanceRow, type RuleRow, type DedapiKeyView, type ComplianceRow, type GovMeta, type OrgRole, type CompanyHit } from '@/lib/api';
 
 type Phase = 'loading' | 'auth' | 'ready' | 'disabled';
-type Tab = 'fabric' | 'guidance' | 'rules' | 'compliance' | 'keys' | 'users';
+type Tab = 'fabric' | 'guidance' | 'rules' | 'compliance' | 'verify' | 'keys' | 'users';
 
 export default function ConsolePage() {
   const [phase, setPhase] = useState<Phase>('loading');
@@ -77,7 +77,7 @@ function Console({ me, onSignOut }: { me: OrgUserView; onSignOut: () => void }) 
   const canAdmin = me.role === 'owner' || me.role === 'admin';
   useEffect(() => { if (canAdmin) api.gov.auditVerify().then(setAudit).catch(() => undefined); }, [canAdmin]);
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'fabric', label: 'Fabric' }, { id: 'guidance', label: 'Guidance' }, { id: 'rules', label: 'Rules' }, { id: 'compliance', label: 'Compliance' },
+    { id: 'fabric', label: 'Fabric' }, { id: 'guidance', label: 'Guidance' }, { id: 'rules', label: 'Rules' }, { id: 'compliance', label: 'Compliance' }, { id: 'verify', label: 'Verify (UK)' },
     ...(canAdmin ? [{ id: 'keys' as Tab, label: 'dedapi keys' }, { id: 'users' as Tab, label: 'Users' }] : []),
   ];
   return (
@@ -97,6 +97,7 @@ function Console({ me, onSignOut }: { me: OrgUserView; onSignOut: () => void }) 
       {tab === 'guidance' && <GuidanceTab role={me.role} />}
       {tab === 'rules' && <RulesTab role={me.role} />}
       {tab === 'compliance' && <ComplianceTab role={me.role} />}
+      {tab === 'verify' && <VerifyTab role={me.role} />}
       {tab === 'keys' && canAdmin && <KeysTab />}
       {tab === 'users' && canAdmin && <UsersTab />}
     </div>
@@ -301,6 +302,58 @@ function ComplianceTab({ role }: { role: OrgRole }) {
           <button className="org-btn org-btn-primary" onClick={() => void save()}>Add / update notice</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function VerifyTab({ role }: { role: OrgRole }) {
+  const canAdmin = role === 'owner' || role === 'admin';
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [keyInput, setKeyInput] = useState('');
+  const [q, setQ] = useState('');
+  const [items, setItems] = useState<CompanyHit[] | null>(null);
+  const [err, setErr] = useState(''); const [msg, setMsg] = useState('');
+  const load = useCallback(() => { api.companies.status().then((s) => setConfigured(s.configured)).catch(() => setConfigured(false)); }, []);
+  useEffect(() => { load(); }, [load]);
+  const saveKey = async () => {
+    setErr(''); setMsg('');
+    try { await api.companies.setKey(keyInput.trim()); setMsg('Companies House key saved.'); setKeyInput(''); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.message : 'Could not save key.'); }
+  };
+  const search = async () => {
+    setErr('');
+    if (q.trim().length < 2) return;
+    try { const r = await api.companies.search(q.trim()); setConfigured(r.configured); setItems(r.items); }
+    catch (e) { setErr(e instanceof ApiError ? e.message : 'Search failed.'); }
+  };
+  return (
+    <div className="org-card">
+      <h2 className="org-h2">Verify UK organisation (Companies House)</h2>
+      <p className="org-lead">Look up and verify a UK company by name or number during org onboarding. Also exposed to me.anvaya over dedapi (<code>/dedapi/companies/search</code>).</p>
+      {configured === false && (
+        <div className="org-card" style={{ marginBottom: 14, background: '#0A1525' }}>
+          <p className="org-lead" style={{ marginTop: 0 }}>Companies House isn’t connected yet. {canAdmin ? 'Enter your CH REST API key:' : 'Ask an owner/admin to add the API key.'}</p>
+          {canAdmin && (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <input className="org-input" type="password" placeholder="Companies House API key" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} style={{ maxWidth: 360 }} />
+              <button className="org-btn org-btn-primary" disabled={!keyInput.trim()} onClick={() => void saveKey()}>Save key</button>
+            </div>
+          )}
+        </div>
+      )}
+      {configured && <span className="org-tag" style={{ color: '#5BD08A' }}>Companies House connected</span>}
+      <div style={{ display: 'flex', gap: 10, margin: '14px 0' }}>
+        <input className="org-input" placeholder="Company name or number" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void search(); }} style={{ maxWidth: 360 }} />
+        <button className="org-btn org-btn-primary" onClick={() => void search()} disabled={q.trim().length < 2}>Search</button>
+      </div>
+      {err && <p className="org-err">{err}</p>}{msg && <p className="org-ok">{msg}</p>}
+      {items && items.length === 0 && <p className="org-muted" style={{ fontSize: 13 }}>No matches.</p>}
+      {items && items.map((c) => (
+        <div key={c.number} className="org-row" style={{ gridTemplateColumns: '1fr auto' }}>
+          <span><b>{c.name}</b> <span className="org-muted" style={{ fontSize: 12 }}>#{c.number}{c.address ? ` · ${c.address}` : ''}</span></span>
+          {c.status && <span className="org-tag" style={{ color: c.status === 'active' ? '#5BD08A' : '#E3B341' }}>{c.status}</span>}
+        </div>
+      ))}
     </div>
   );
 }

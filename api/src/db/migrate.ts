@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
   row_id varchar(96) NOT NULL, before_hash text, after_hash text, prev_entry_hash text,
   entry_hash text NOT NULL, changed_by varchar(64) NOT NULL, changed_at bigint NOT NULL
 );
+CREATE TABLE IF NOT EXISTS org_config (
+  id varchar(96) PRIMARY KEY, value_enc text NOT NULL, updated_by varchar(64) NOT NULL,
+  created_at bigint NOT NULL, updated_at bigint NOT NULL
+);
 `;
 
 // --- Country fabric cell (per-region DB): the governed guidance + rules for THAT country. ---

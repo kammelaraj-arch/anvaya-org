@@ -7,6 +7,15 @@
 
 import { pgTable, varchar, text, jsonb, bigint } from 'drizzle-orm/pg-core';
 
+// Encrypted operator config (e.g. Companies House API key) — value sealed at rest.
+export const orgConfig = pgTable('org_config', {
+  id: varchar('id', { length: 96 }).primaryKey(),
+  valueEnc: text('value_enc').notNull(),
+  updatedBy: varchar('updated_by', { length: 64 }).notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+});
+
 export const orgUsers = pgTable('org_users', {
   id: varchar('id', { length: 64 }).primaryKey(),
   email: varchar('email', { length: 200 }).notNull().unique(),

@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { DedapiKeyGuard } from './dedapi.guard';
 import { DedapiService } from './dedapi.service';
+import { CompaniesHouseService } from '../companies/companies-house.service';
 
 // dedapi.org.anvaya.one — the dedicated, API-key-authenticated channel that consuming platforms
 // (me.anvaya) use to read the governed country-specific catalogue + rules and validate profiles.
@@ -8,7 +9,7 @@ import { DedapiService } from './dedapi.service';
 @Controller('dedapi')
 @UseGuards(DedapiKeyGuard)
 export class DedapiController {
-  constructor(private readonly dedapi: DedapiService) {}
+  constructor(private readonly dedapi: DedapiService, private readonly ch: CompaniesHouseService) {}
 
   /** Governed guidance for an Information-Library type in a country (the action cards). */
   @Get('guidance')
@@ -34,6 +35,19 @@ export class DedapiController {
     const c = (country ?? '').trim();
     const notes = c ? await this.dedapi.compliance(c, (type ?? '').trim() || undefined) : [];
     return { type: (type ?? '').trim(), country: c, governedBy: 'org.anvaya.one', notes };
+  }
+
+  /** Verify a UK company via Companies House through the governed channel (me.anvaya consumes this). */
+  @Get('companies/search')
+  async companiesSearch(@Query('q') q?: string) {
+    const query = (q ?? '').trim();
+    if (query.length < 2) return { configured: false, items: [] };
+    return this.ch.search(query);
+  }
+
+  @Get('companies/:number')
+  async company(@Param('number') number: string) {
+    return this.ch.get(number);
   }
 
   /** What countries/types the platform governs (for discovery + sync). */
