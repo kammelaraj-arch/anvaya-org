@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS org_config (
   id varchar(96) PRIMARY KEY, value_enc text NOT NULL, updated_by varchar(64) NOT NULL,
   created_at bigint NOT NULL, updated_at bigint NOT NULL
 );
+CREATE TABLE IF NOT EXISTS fabric_cells (
+  id varchar(4) PRIMARY KEY, display_name text NOT NULL, enabled boolean NOT NULL DEFAULT true,
+  notes text, sequence bigint NOT NULL DEFAULT 0, updated_by varchar(64) NOT NULL,
+  created_at bigint NOT NULL, updated_at bigint NOT NULL
+);
 `;
 
 // --- Country fabric cell (per-region DB): the governed guidance + rules for THAT country. ---

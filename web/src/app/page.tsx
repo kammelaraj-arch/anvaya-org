@@ -4,10 +4,10 @@
 // country-specific guidance catalogue + rules and issue dedapi keys to consuming platforms.
 
 import { useCallback, useEffect, useState } from 'react';
-import { api, apiEnabled, ApiError, type OrgUserView, type GuidanceRow, type RuleRow, type DedapiKeyView, type ComplianceRow, type GovMeta, type OrgRole, type CompanyHit } from '@/lib/api';
+import { api, apiEnabled, ApiError, type OrgUserView, type GuidanceRow, type RuleRow, type DedapiKeyView, type ComplianceRow, type GovMeta, type OrgRole, type CompanyHit, type FabricCell, type ConfigEntry, type RuntimeConfig } from '@/lib/api';
 
 type Phase = 'loading' | 'auth' | 'ready' | 'disabled';
-type Tab = 'fabric' | 'guidance' | 'rules' | 'compliance' | 'verify' | 'keys' | 'users';
+type Tab = 'fabric' | 'guidance' | 'rules' | 'compliance' | 'verify' | 'config' | 'keys' | 'users';
 
 export default function ConsolePage() {
   const [phase, setPhase] = useState<Phase>('loading');
@@ -78,7 +78,7 @@ function Console({ me, onSignOut }: { me: OrgUserView; onSignOut: () => void }) 
   useEffect(() => { if (canAdmin) api.gov.auditVerify().then(setAudit).catch(() => undefined); }, [canAdmin]);
   const tabs: { id: Tab; label: string }[] = [
     { id: 'fabric', label: 'Fabric' }, { id: 'guidance', label: 'Guidance' }, { id: 'rules', label: 'Rules' }, { id: 'compliance', label: 'Compliance' }, { id: 'verify', label: 'Verify (UK)' },
-    ...(canAdmin ? [{ id: 'keys' as Tab, label: 'dedapi keys' }, { id: 'users' as Tab, label: 'Users' }] : []),
+    ...(canAdmin ? [{ id: 'config' as Tab, label: 'Config' }, { id: 'keys' as Tab, label: 'dedapi keys' }, { id: 'users' as Tab, label: 'Users' }] : []),
   ];
   return (
     <div className="org-shell">
@@ -93,43 +93,151 @@ function Console({ me, onSignOut }: { me: OrgUserView; onSignOut: () => void }) 
       <div className="org-tabs">
         {tabs.map((t) => <button key={t.id} className={`org-tab${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>)}
       </div>
-      {tab === 'fabric' && <FabricTab audit={audit} />}
+      {tab === 'fabric' && <FabricTab audit={audit} role={me.role} />}
       {tab === 'guidance' && <GuidanceTab role={me.role} />}
       {tab === 'rules' && <RulesTab role={me.role} />}
       {tab === 'compliance' && <ComplianceTab role={me.role} />}
       {tab === 'verify' && <VerifyTab role={me.role} />}
+      {tab === 'config' && canAdmin && <ConfigTab />}
       {tab === 'keys' && canAdmin && <KeysTab />}
       {tab === 'users' && canAdmin && <UsersTab />}
     </div>
   );
 }
 
-function FabricTab({ audit }: { audit: { valid: boolean; count: number } | null }) {
-  const [cells, setCells] = useState<{ country: string; online: boolean; guidance: number; rules: number }[] | null>(null);
-  useEffect(() => { api.gov.overview().then((r) => setCells(r.cells)).catch(() => setCells([])); }, []);
+function FabricTab({ audit, role }: { audit: { valid: boolean; count: number } | null; role: OrgRole }) {
+  const canAdmin = role === 'owner' || role === 'admin';
+  const [cells, setCells] = useState<FabricCell[] | null>(null);
+  const [edit, setEdit] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ displayName: string; notes: string }>({ displayName: '', notes: '' });
+  const [err, setErr] = useState('');
   const FLAG: Record<string, string> = { IN: '🇮🇳', UK: '🇬🇧', US: '🇺🇸' };
+  const load = useCallback(() => { api.fabric.cells().then((r) => setCells(r.cells)).catch(() => setCells([])); }, []);
+  useEffect(() => { load(); }, [load]);
+  const startEdit = (c: FabricCell) => { setEdit(c.country); setDraft({ displayName: c.displayName, notes: c.notes ?? '' }); setErr(''); };
+  const saveCell = async (country: string, patch: { displayName?: string; enabled?: boolean; notes?: string }) => {
+    setErr('');
+    try { await api.fabric.setCell({ country, ...patch }); setEdit(null); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.message : 'Could not save cell.'); }
+  };
   return (
     <div className="org-card">
-      <h2 className="org-h2">Fabric topology</h2>
-      <p className="org-lead">org.anvaya.one runs a Common control-plane (admins · dedapi keys · audit) plus a governed fabric cell per country. Each country&apos;s guidance &amp; rules live in its own cell DB and are served over dedapi.</p>
+      <h2 className="org-h2">Fabric topology &amp; configuration</h2>
+      <p className="org-lead">org.anvaya.one runs a Common control-plane (admins · dedapi keys · audit) plus a governed fabric cell per country. Each country&apos;s guidance &amp; rules live in its own cell DB and are served over dedapi.{canAdmin ? ' Owners/admins can configure each cell below.' : ''}</p>
+      {err && <p className="org-err">{err}</p>}
       <div className="org-grid">
         <div className="org-card" style={{ background: '#0A1525' }}>
           <div className="org-tag" style={{ marginBottom: 8 }}>Common control-plane</div>
-          <div style={{ fontSize: 13 }}>Org admins · dedapi keys</div>
+          <div style={{ fontSize: 13 }}>Org admins · dedapi keys · config</div>
           <div style={{ fontSize: 13, marginTop: 6 }}>Audit chain: {audit ? <b style={{ color: audit.valid ? '#5BD08A' : '#FF8A8A' }}>{audit.valid ? `intact · ${audit.count} entries` : 'BROKEN'}</b> : <span className="org-muted">checking…</span>}</div>
         </div>
         {(cells ?? []).map((c) => (
-          <div key={c.country} className="org-card" style={{ background: '#0A1525' }}>
+          <div key={c.country} className="org-card" style={{ background: '#0A1525', opacity: c.enabled ? 1 : 0.6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 18 }}>{FLAG[c.country] ?? '🏳️'}</span>
-              <b>One Fabric {c.country}</b>
+              <b>{edit === c.country ? c.country : c.displayName}</b>
               <span className="org-tag" style={{ marginLeft: 'auto', color: c.online ? '#5BD08A' : '#FF8A8A' }}>{c.online ? 'online' : 'offline'}</span>
             </div>
-            <div style={{ fontSize: 13 }} className="org-muted">{c.guidance} guidance · {c.rules} rules</div>
+            {edit === c.country ? (
+              <div>
+                <label className="org-label">Display name</label>
+                <input className="org-input" value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} />
+                <label className="org-label" style={{ marginTop: 8 }}>Notes</label>
+                <input className="org-input" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder="Operator notes (optional)" />
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button className="org-btn org-btn-primary" onClick={() => void saveCell(c.country, { displayName: draft.displayName, notes: draft.notes })}>Save</button>
+                  <button className="org-btn" onClick={() => setEdit(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 13 }} className="org-muted">{c.guidance} guidance · {c.rules} rules · {c.compliance} compliance</div>
+                <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <span className="org-tag" style={{ color: c.provisioned ? '#9FC3FF' : '#E3B341' }}>{c.provisioned ? 'cell DB provisioned' : 'falls back to default'}</span>
+                  <span className="org-tag" style={{ color: c.enabled ? '#5BD08A' : '#FF8A8A' }}>{c.enabled ? 'enabled' : 'disabled'}</span>
+                </div>
+                {c.notes && <div className="org-muted" style={{ fontSize: 12, marginTop: 6 }}>{c.notes}</div>}
+                {canAdmin && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button className="org-btn" onClick={() => startEdit(c)}>Configure</button>
+                    <button className="org-btn" onClick={() => void saveCell(c.country, { enabled: !c.enabled })}>{c.enabled ? 'Disable' : 'Enable'}</button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         ))}
         {cells === null && <p className="org-muted" style={{ fontSize: 13 }}>Loading cells…</p>}
       </div>
+    </div>
+  );
+}
+
+function ConfigTab() {
+  const [entries, setEntries] = useState<ConfigEntry[] | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeConfig | null>(null);
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const [err, setErr] = useState(''); const [msg, setMsg] = useState('');
+  const load = useCallback(() => {
+    api.settings.list().then((r) => {
+      setEntries(r.entries); setRuntime(r.runtime);
+      // Prefill editable (non-secret) values; secrets stay blank (write-only).
+      const seed: Record<string, string> = {};
+      for (const e of r.entries) if (!e.secret && e.value !== undefined) seed[e.id] = e.value;
+      setVals(seed);
+    }).catch(() => { setEntries([]); });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const save = async (id: string) => {
+    setErr(''); setMsg('');
+    try { await api.settings.set(id, vals[id] ?? ''); setMsg('Saved.'); setVals((v) => { const n = { ...v }; const e = entries?.find((x) => x.id === id); if (e?.secret) delete n[id]; return n; }); load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.message : 'Could not save.'); }
+  };
+  const clear = async (id: string) => { setErr(''); setMsg(''); try { await api.settings.clear(id); setVals((v) => { const n = { ...v }; delete n[id]; return n; }); load(); } catch (e) { setErr(e instanceof ApiError ? e.message : 'Could not clear.'); } };
+  const group = (cat: 'integration' | 'platform') => (entries ?? []).filter((e) => e.category === cat);
+  const Entry = ({ e }: { e: ConfigEntry }) => (
+    <div className="org-row" style={{ gridTemplateColumns: '1fr', display: 'block', borderBottom: '1px solid var(--org-line)', paddingBottom: 14, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <b>{e.label}</b>
+        <span className="org-tag" style={{ color: e.isSet ? '#5BD08A' : '#E3B341' }}>{e.isSet ? (e.secret ? 'set ••••••' : 'set') : 'not set'}</span>
+        {e.updatedAt && <span className="org-muted" style={{ fontSize: 11 }}>updated {new Date(e.updatedAt).toLocaleDateString()}</span>}
+      </div>
+      {e.help && <p className="org-muted" style={{ fontSize: 12, margin: '4px 0 8px' }}>{e.help}</p>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+        <input className="org-input" style={{ maxWidth: 380 }} type={e.secret ? 'password' : 'text'}
+          placeholder={e.secret ? (e.isSet ? 'Enter a new value to replace' : e.placeholder ?? 'Enter value') : e.placeholder ?? ''}
+          value={vals[e.id] ?? ''} onChange={(ev) => setVals((v) => ({ ...v, [e.id]: ev.target.value }))} />
+        <button className="org-btn org-btn-primary" disabled={!(vals[e.id] ?? '').trim()} onClick={() => void save(e.id)}>Save</button>
+        {e.isSet && <button className="org-btn org-btn-danger" onClick={() => void clear(e.id)}>Clear</button>}
+      </div>
+    </div>
+  );
+  return (
+    <div className="org-card">
+      <h2 className="org-h2">Platform configuration</h2>
+      <p className="org-lead">Integration API keys and platform settings. Secrets are encrypted at rest (AES-256-GCM) and never shown again — enter a new value to replace. Every change is recorded in the audit chain.</p>
+      {err && <p className="org-err">{err}</p>}{msg && <p className="org-ok">{msg}</p>}
+
+      <h3 className="org-h3" style={{ marginTop: 18 }}>Integrations &amp; API keys</h3>
+      {entries === null ? <p className="org-muted" style={{ fontSize: 13 }}>Loading…</p> : group('integration').map((e) => <Entry key={e.id} e={e} />)}
+
+      <h3 className="org-h3" style={{ marginTop: 18 }}>Platform settings</h3>
+      {(entries ?? []).length > 0 && group('platform').map((e) => <Entry key={e.id} e={e} />)}
+
+      {runtime && (
+        <>
+          <h3 className="org-h3" style={{ marginTop: 18 }}>Runtime configuration</h3>
+          <div className="org-card" style={{ background: '#0A1525' }}>
+            <div style={{ fontSize: 13, lineHeight: 1.9 }}>
+              <div>Governed by: <b>{runtime.governedBy}</b></div>
+              <div>Default region: <b>{runtime.defaultRegion}</b></div>
+              <div>Provisioned cells: <b>{runtime.regions.length ? runtime.regions.join(' · ') : 'single-DB fallback'}</b></div>
+              <div>Common control-plane DB: <b style={{ color: runtime.commonConfigured ? '#5BD08A' : '#E3B341' }}>{runtime.commonConfigured ? 'configured' : 'fallback'}</b></div>
+              <div>App origins: <span className="org-muted">{runtime.appOrigins.join(', ')}</span></div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -83,7 +83,22 @@ export const api = {
     search: (q: string) => call<{ configured: boolean; items: CompanyHit[] }>(`/companies/search?q=${encodeURIComponent(q)}`),
     get: (number: string) => call<{ configured: boolean; company: CompanyDetail | null }>(`/companies/company/${encodeURIComponent(number)}`),
   },
+  settings: {
+    list: () => call<{ entries: ConfigEntry[]; runtime: RuntimeConfig }>('/settings'),
+    set: (id: string, value: string) => call<{ ok: true }>(`/settings/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ value }) }),
+    clear: (id: string) => call<{ ok: true }>(`/settings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+  fabric: {
+    cells: () => call<{ cells: FabricCell[] }>('/fabric/cells'),
+    setCell: (b: { country: string; displayName?: string; enabled?: boolean; notes?: string }) =>
+      call<{ country: string }>('/fabric/cells', { method: 'POST', body: JSON.stringify(b) }),
+  },
 };
+
+export type ConfigCategory = 'integration' | 'platform';
+export interface ConfigEntry { id: string; label: string; category: ConfigCategory; secret: boolean; help?: string; placeholder?: string; isSet: boolean; value?: string; updatedBy?: string; updatedAt?: number }
+export interface RuntimeConfig { governedBy: string; defaultRegion: string; regions: string[]; commonConfigured: boolean; appOrigins: string[] }
+export interface FabricCell { country: string; displayName: string; enabled: boolean; notes: string | null; provisioned: boolean; online: boolean; guidance: number; rules: number; compliance: number; updatedAt: number | null }
 
 export interface CompanyHit { number: string; name: string; status?: string; type?: string; address?: string }
 export interface CompanyDetail extends CompanyHit { incorporatedOn?: string; sicCodes?: string[] }

@@ -25,6 +25,7 @@ a { color: var(--org-accent); }
 .org-tab.active { background: var(--org-accent); border-color: var(--org-accent); color: #fff; }
 .org-card { background: var(--org-panel); border: 1px solid var(--org-line); border-radius: 14px; padding: 18px; }
 .org-h2 { margin: 0 0 4px; font-size: 16px; font-weight: 800; }
+.org-h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--org-muted, #8aa); }
 .org-lead { margin: 0 0 16px; font-size: 13px; color: var(--org-muted); line-height: 1.5; }
 .org-row { display: grid; grid-template-columns: 60px 1fr 1fr; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--org-line); font-size: 13px; }
 .org-input, .org-select, .org-textarea {

@@ -26,6 +26,13 @@ export class ConfigStore {
     return Boolean(row?.valueEnc);
   }
 
+  /** Non-secret metadata for a config key (set status + provenance). Never returns the value. */
+  async info(key: string): Promise<{ isSet: boolean; updatedBy?: string; updatedAt?: number }> {
+    const row = (await this.db.select().from(s.orgConfig).where(eq(s.orgConfig.id, key)))[0];
+    if (!row) return { isSet: false };
+    return { isSet: Boolean(row.valueEnc), updatedBy: row.updatedBy, updatedAt: row.updatedAt };
+  }
+
   async set(key: string, value: string, by: string): Promise<void> {
     const now = Date.now();
     const valueEnc = sealConfig(value, this.cfg.sessionSecret);

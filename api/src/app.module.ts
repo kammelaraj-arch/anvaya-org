@@ -13,6 +13,10 @@ import { DedapiController } from './dedapi/dedapi.controller';
 import { DedapiKeyGuard } from './dedapi/dedapi.guard';
 import { KeysController } from './dedapi/keys.controller';
 import { ConfigStore } from './settings/config-store';
+import { SettingsService } from './settings/settings.service';
+import { SettingsController } from './settings/settings.controller';
+import { FabricService } from './fabric/fabric.service';
+import { FabricController } from './fabric/fabric.controller';
 import { CompaniesHouseService } from './companies/companies-house.service';
 import { CompaniesController } from './companies/companies.controller';
 import { HealthController } from './health.controller';
@@ -21,13 +25,15 @@ import { HealthController } from './health.controller';
 // + rules, serves them over the dedapi channel, manages org admins + API keys, and verifies UK
 // organisations via Companies House. Independent of the family app (me.anvaya): own DB + deployment.
 @Module({
-  controllers: [HealthController, AuthController, GovernanceController, DedapiController, KeysController, CompaniesController],
+  controllers: [HealthController, AuthController, GovernanceController, FabricController, SettingsController, DedapiController, KeysController, CompaniesController],
   providers: [
     { provide: ORG_CONFIG, useFactory: () => loadConfig() },
     OrgRegionRouter,
     AuditService,
     AuthService,
     GovernanceService,
+    FabricService,
+    SettingsService,
     DedapiService,
     ConfigStore,
     CompaniesHouseService,

@@ -5,7 +5,20 @@
 //   • dedapi_keys      — API keys issued to consuming platforms (me.anvaya) for the dedapi channel.
 //   • audit_log        — tamper-evident hash-chained change log.
 
-import { pgTable, varchar, text, jsonb, bigint } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, text, jsonb, bigint, boolean } from 'drizzle-orm/pg-core';
+
+// Fabric cell configuration (Common control-plane). Operator-managed metadata + enablement for each
+// country fabric cell — the physical DB connection itself stays env-level (ORG_DATABASE_URL_<R>).
+export const fabricCells = pgTable('fabric_cells', {
+  id: varchar('id', { length: 4 }).primaryKey(), // country code
+  displayName: text('display_name').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  notes: text('notes'),
+  sequence: bigint('sequence', { mode: 'number' }).notNull().default(0),
+  updatedBy: varchar('updated_by', { length: 64 }).notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+});
 
 // Encrypted operator config (e.g. Companies House API key) — value sealed at rest.
 export const orgConfig = pgTable('org_config', {
