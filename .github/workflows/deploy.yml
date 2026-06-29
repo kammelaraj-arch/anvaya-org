@@ -51,7 +51,7 @@ jobs:
           mkdir -p deploy-pkg/web/web/.next
           cp -r web/.next/static deploy-pkg/web/web/.next/static
           [ -d web/public ] && cp -r web/public deploy-pkg/web/web/public || true
-          pnpm --filter=@anvaya-org/api deploy --prod deploy-pkg/api
+          pnpm --filter=@anvaya-org/api deploy --prod --legacy deploy-pkg/api
           test -f deploy-pkg/api/dist/main.js && echo "api bundle ok"
           cp -r infra deploy-pkg/infra
           tar -czf deploy-org-pkg.tgz -C deploy-pkg .
