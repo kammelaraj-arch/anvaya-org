@@ -1,0 +1,50 @@
+name: Deploy to server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Prevent overlapping deploys.
+concurrency:
+  group: deploy-server
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy site via rsync
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          if [ -z "$DEPLOY_PATH" ]; then
+            echo "::error::DEPLOY_PATH repository variable is not set (target web root on the server)."
+            exit 1
+          fi
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p ${SSH_PORT:-22}" \
+            ./public/ \
+            "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
